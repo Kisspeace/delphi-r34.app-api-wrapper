@@ -8,23 +8,51 @@ uses
 
 const
   R34APP_API_URL = 'https://api.r34.app';
+  DEFAULT_LIMIT = 20;
 
 type
 
+  TR34AppFreeBooru = (
+    rule34xxx,        // rule34.xxx
+    rule34pahealnet,  // rule34.paheal.net
+    danboorudonmaius, // danbooru.donmai.us
+    gelboorucom,      // gelbooru.com
+    safebooruorg,     // safebooru.org
+    e621net,          // e621.net
+    e926net           // e926.net
+  );
+
   TR34AppClient = class(TObject)
-    private
-      FBooru: string;
     public
       WebClient: TNetHttpClient;
-      function GetPosts(ATags: string; APageId: integer = 1;
-        ALimit: integer = 100): TR34AppItems;
-      property Booru: string read FBooru write FBooru;
+      function GetPosts(ATags: string; APageId: integer = 0; ALimit: integer = DEFAULT_LIMIT; ABooru: TR34AppFreeBooru = rule34xxx): TR34AppItems;
       constructor Create;
       destructor Destroy; override;
   end;
 
+  function BooruToLink(ABooru: TR34AppFreeBooru): string;
+  function GetProxyUrl(AUrl: string): string;
+
 implementation
-uses unit1;
+
+function BooruToLink(ABooru: TR34AppFreeBooru): string;
+begin
+  case ABooru of
+    rule34xxx:        Result := 'rule34.xxx';
+    rule34pahealnet:  Result := 'rule34.paheal.net';
+    danboorudonmaius: Result := 'danbooru.donmai.us';
+    gelboorucom:      Result := 'gelbooru.com';
+    safebooruorg:     Result := 'safebooru.org';
+    e621net:          Result := 'e621.net';
+    e926net:          Result := 'e926.net';
+  end;
+end;
+
+function GetProxyUrl(AUrl: string): string;
+begin
+  Result := 'https://cors-proxy.r34.app/?q=' + AUrl;
+end;
+
 
 { TR34Client }
 
@@ -33,7 +61,6 @@ begin
   WebClient := TNetHttpClient.Create(nil);
   WebClient.SynchronizeEvents := true;
   WebClient.Asynchronous := false;
-  Booru := 'rule34.xxx';
 end;
 
 destructor TR34AppClient.Destroy;
@@ -43,38 +70,39 @@ begin
 end;
 
 function TR34AppClient.GetPosts(ATags: string; APageId: integer;
-  ALimit: integer): TR34AppItems;
+  ALimit: integer; ABooru: TR34AppFreeBooru): TR34AppItems;
 var
   X: ISuperArray;
-  url: string;
+  Url: string;
+  BooruLink: string;
   Response: IHTTPResponse;
   Content: string;
 begin
   Result := nil;
-  url :=
-    ( R34APP_API_URL + '/booru/' +
-      FBooru + '/posts?' +
-      'baseEndpoint=' + FBooru +
-      '&limit=' + ALimit.ToString +
-      '&pageID=' + APageId.ToString );
+  Url := R34APP_API_URL + '/booru/';
+  BooruLink := BooruToLink(ABooru);
 
-  if not ATags.IsEmpty then
-    url := url + '&tags=' + ATags;
+  case ABooru of
+    danboorudonmaius: Url := Url + 'danbooru2';
+    safebooruorg:     Url := Url + 'gelbooru';
+    e926net:          Url := Url + 'e621.net';
+    else              Url := Url + BooruLink;
+  end;
+
+  Url := Url + '/posts?' +
+    'baseEndpoint=' + BooruLink +
+    '&limit=' + ALimit.ToString +
+    '&pageID=' + APageId.ToString;
+
+  if ( not ATags.IsEmpty ) then
+    Url := Url + '&tags=' + ATags;
 
   Response := WebClient.Get(url);
+  Content := Response.ContentAsString;
 
-  try
-    Content := Response.ContentAsString;
-    X := SA(Content);
-    try
-      if X.Length > 0 then
-        Result := TJson.Parse<TR34AppItems>(X);
-    except
-      Result := nil;
-    end;
-  Except
-    Result := nil;
-  end;
+  X := SA(Content);
+  if ( X.Length > 0 ) then
+    Result := TJson.Parse<TR34AppItems>(X);
 end;
 
 end.
